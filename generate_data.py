@@ -88,7 +88,7 @@ class GalWrapper:
 
         return rand
 
-    def __generatePSF(self):
+    def __generatePSF(self, eMin, eMax):
         # Define the PSF profile
         self.psf = galsim.Moffat(beta=self.psfData.beta, fwhm=self.psfData.fwhm, trunc=self.psfData.trunc)
 
@@ -97,8 +97,8 @@ class GalWrapper:
         re = self.psf.half_light_radius
 
         if self.randomShear:
-            e1 = self.randomFloat(-0.04, 0.04)
-            e2 = self.randomFloat(-0.04, 0.04)
+            e1 = self.randomFloat(eMin, eMax)
+            e2 = self.randomFloat(eMin, eMax)
 
         self.psf = self.psf.shear(e1 = e1, e2 = e2)
         return (e1, e2, re)
@@ -123,8 +123,8 @@ class GalWrapper:
 
         return (subGalImage, subPSFImage)
 
-    def __generateEllipticGalaxy(self, ud, gd):
-        e1, e2, re = self.__generatePSF()
+    def __generateEllipticGalaxy(self, ud, gd, eMin, eMax, gMin, gMax):
+        e1, e2, re = self.__generatePSF(eMin, eMax)
         self.__generateGAL(re)
 
         # Use a random orientation:
@@ -135,8 +135,8 @@ class GalWrapper:
         g2 = self.galData.g2 
         
         if self.randomShear:
-            g1 = self.randomFloat(-0.5, 0.5)
-            g2 = self.randomFloat(-0.5, 0.5)
+            g1 = self.randomFloat(gMin, gMax)
+            g2 = self.randomFloat(gMin, gMax)
 
         # Determine the ellipticity to use for this galaxy.
         ellip = 1
@@ -173,55 +173,87 @@ class GalWrapper:
         noise = galsim.PoissonNoise(ud, sky_level=skyLevelPixel)
         subGalImage.addNoiseSNR(noise, self.galData.signalToNoise)
 
-    def generateImage(self, amount, outputFolder, psfFilename, galFilename, jsonFilename):
+    def __getStartNumber(self, outputFolder):
+        path = os.path.join(outputFolder, "data.json")
+        if not os.path.isfile(path):
+            return 0, []
+
+        with open(path, "r") as jsonFile:
+            # It's a JSON array
+            jsonObject = json.loads(jsonFile.read())
+            number = len(jsonObject)
+            return number, jsonObject
+
+
+    def generateImage(self, args, psfFilename, galFilename, jsonFilename):
         jsonList = []
+        amount = int(args["number"])
+        outputFolder = args["output"]
+        eValues = args["psf"].split(",")
+        gValues = args["galaxy"].split(",")
+        eMin = float(eValues[0])
+        eMax = float(eValues[1])
+        gMin = float(gValues[0])
+        gMax = float(gValues[1])
+        resume = args["resume"]
+        start = 0
+        if resume:
+            start, jsonList = self.__getStartNumber(outputFolder)
+        if start >= amount:
+            exit()
 
-        for i in range(amount): 
-            self.galImage = galsim.ImageF(self.width, self.height, scale=self.scale)
-            self.psfImage = galsim.ImageF(self.width, self.height, scale=self.scale)
+        print(f"Generating galaxies and psf with e({eMin}, {eMax}) and g({gMin}, {gMax})")
+        try:
+            for i in range(start, amount): 
+                self.galImage = galsim.ImageF(self.width, self.height, scale=self.scale)
+                self.psfImage = galsim.ImageF(self.width, self.height, scale=self.scale)
 
-            psfBase = f"{psfFilename}_{i}"
-            galBase = f"{galFilename}_{i}"
-            psfFitsPath = os.path.join(outputFolder, f"{psfBase}.fits")
-            galFitsPath = os.path.join(outputFolder, f"{galBase}.fits")
-            psfTifPath = os.path.join(outputFolder, f"{psfBase}.tif")
-            galTifPath = os.path.join(outputFolder, f"{galBase}.tif")
+                psfBase = f"{psfFilename}_{i}"
+                galBase = f"{galFilename}_{i}"
+                psfFitsPath = os.path.join(outputFolder, f"{psfBase}.fits")
+                galFitsPath = os.path.join(outputFolder, f"{galBase}.fits")
+                psfTifPath = os.path.join(outputFolder, f"{psfBase}.tif")
+                galTifPath = os.path.join(outputFolder, f"{galBase}.tif")
 
-            # Generate random deviates
-            ud, gd = self.__generateDeviates()
+                # Generate random deviates
+                ud, gd = self.__generateDeviates()
 
-            # Random elliptict galaxy warped by gravity
-            tempGal, e1, e2, g1, g2 = self.__generateEllipticGalaxy(ud, gd)
-            
-            # Random shift
-            _, dx, dy = self.__generateRandomShift(ud)
-            tempGal = tempGal.shift(dx, dy)
-            tempPSF = self.psf.shift(dx, dy)
+                # Random elliptict galaxy warped by gravity
+                tempGal, e1, e2, g1, g2 = self.__generateEllipticGalaxy(ud, gd, eMin, eMax, gMin, gMax)
+                
+                # Random shift
+                _, dx, dy = self.__generateRandomShift(ud)
+                tempGal = tempGal.shift(dx, dy)
+                tempPSF = self.psf.shift(dx, dy)
 
-            finalGal = galsim.Convolve([self.psf, tempGal])
-            finalGal.drawImage(self.galImage)
-            tempPSF.drawImage(self.psfImage)
+                finalGal = galsim.Convolve([self.psf, tempGal])
+                finalGal.drawImage(self.galImage)
+                tempPSF.drawImage(self.psfImage)
 
-            if self.addNoise:
-                self.__addNoise(self.galImage, ud)
+                if self.addNoise:
+                    self.__addNoise(self.galImage, ud)
 
-            jsonList.append({
-                "galaxy": f"{galBase}.tif",
-                "psf": f"{psfBase}.tif",
-                "e1": e1,
-                "e2": e2,
-                "g1": g1,
-                "g2": g2
-            })
+                jsonList.append({
+                    "galaxy": f"{galBase}.tif",
+                    "psf": f"{psfBase}.tif",
+                    "e1": e1,
+                    "e2": e2,
+                    "g1": g1,
+                    "g2": g2,
+                    "dx": dx,
+                    "dy": dy
+                })
 
-            self.psfImage.write(psfFitsPath)
-            self.galImage.write(galFitsPath)
+                self.psfImage.write(psfFitsPath)
+                self.galImage.write(galFitsPath)
 
-            subprocess.check_call(["stiff", psfFitsPath])
-            os.rename("stiff.tif", psfTifPath)
+                subprocess.check_call(["stiff", psfFitsPath])
+                os.rename("stiff.tif", psfTifPath)
 
-            subprocess.check_call(["stiff", galFitsPath])
-            os.rename("stiff.tif", galTifPath)
+                subprocess.check_call(["stiff", galFitsPath])
+                os.rename("stiff.tif", galTifPath)
+        except:
+            pass
 
         jsonFile = open(os.path.join(outputFolder, jsonFilename + ".json"), "w")
         jsonFile.write(json.dumps(jsonList))
@@ -235,6 +267,9 @@ def mkdir(directory):
 ap = argparse.ArgumentParser()
 ap.add_argument("-n", "--number", required=True, help="Amount of images to generate.")
 ap.add_argument("-o", "--output", required=True, help="Output folder.")
+ap.add_argument("-e", "--psf", required=True, help="An interval that will be used to generate the psf shear. E.g. \"-0.4,0.4\"")
+ap.add_argument("-g", "--galaxy", required=True, help="An interval that will be used to generate the galaxy shear. E.g. \"-0.4,0.4\"")
+ap.add_argument("-r", "--resume", required=False, action="store_true", help="Resume generating data where previously left off. If last batch ended at 100 and -n 200 is used, will generate data from 100-200")
 ap.add_argument("--noise", required=False, action="store_true", help="Add noise to the images.")
 args = vars(ap.parse_args())         
 
@@ -242,4 +277,4 @@ if not os.path.isdir(args["output"]):
     mkdir(args["output"])
 
 wrapper = GalWrapper(addNoise=args["noise"], randomShear=True)
-wrapper.generateImage(int(args["number"]), args["output"], "psf", "gal", "data")
+wrapper.generateImage(args, "psf", "gal", "data")
