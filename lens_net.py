@@ -103,16 +103,16 @@ def train_or_evaluate(model, shouldTrain, shouldEvaluate, inputFilename, modelNa
     """
 
     global config
-    image_height = config["default"]["image_height"]
-    image_width = config["default"]["image_width"]
-    image_channels = 1 if config["default"]["mode"] == "grayscale" else 3
+    image_height = get_image_height()
+    image_width = get_image_width()
+    image_channels = get_image_depth()
 
     # Load the training data and reshape it to fit the input layer
     x_train, x_test, y_train, y_test, min_output, max_output = load_dataset(inputFilename)
     # Shape should be (sample_amount, image_height, image_width, image_depth) for TensorFlow
     # Other frameworks use other order
     x_train = x_train.reshape((x_train.shape[0], image_height, image_width, image_channels))
-    x_test = x_test.reshape((x_test.shape[0], 40, 40, image_channels))
+    x_test = x_test.reshape((x_test.shape[0], image_height, image_width, image_channels))
 
     if shouldTrain:
         print("Training model...")
@@ -158,9 +158,9 @@ def predict_json(model, inputFilename, modelName):
     """
 
     global config
-    image_height = config["default"]["image_height"]
-    image_width = config["default"]["image_width"]
-    image_channels = 1 if config["default"]["mode"] == "grayscale" else 3
+    image_height = get_image_height()
+    image_width = get_image_width()
+    image_channels = get_image_depth()
     min_output = config[modelName]["min_output"]
     max_output = config[modelName]["max_output"]
 
@@ -190,9 +190,9 @@ def predict_image(model, inputFilename, modelName):
     """
 
     global config
-    image_height = config["default"]["image_height"]
-    image_width = config["default"]["image_width"]
-    image_channels = 1 if config["default"]["mode"] == "grayscale" else 3
+    image_height = get_image_height()
+    image_width = get_image_width()
+    image_channels = get_image_depth()
     min_output = config[modelName]["min_output"]
     max_output = config[modelName]["max_output"]
 
@@ -274,6 +274,10 @@ def create_config():
             "g1",
             "g2"
         ],
+        "images": [
+            "galaxy",
+            "psf"
+        ],
         "mode": "rgb",
         "random_state": 56741,
         "learning_rate": 0.001,
@@ -301,7 +305,7 @@ def read_data(dataFilename):
     image_color = cv2.IMREAD_GRAYSCALE if config["default"]["mode"] == "grayscale" else cv2.IMREAD_COLOR
 
     # Split the path from the filename 
-    directory, filename = os.path.split(dataFilename)    
+    directory, _ = os.path.split(dataFilename)    
 
     # Places to store training data and wanted results
     training_data = []
@@ -314,15 +318,26 @@ def read_data(dataFilename):
         
         # Loop over every entry
         for entry in jsonObject:
-            # Galaxy image filename
-            galName = os.path.join(directory, entry['galaxy'])
             result = []
             # Get the wanted results
             for result_class in config["default"]["classes"]:
                 result.append(entry[result_class])
 
+            first = True
+            for imageKey in config["default"]["images"]:
+                # Galaxy image filename
+                imageName = os.path.join(directory, entry[imageKey])
+                image = cv2.imread(imageName, image_color).astype(np.float32)
+
+                if first:
+                    combinedImage = image
+                    first = False
+                else:
+                    combinedImage = np.concatenate((combinedImage, image), axis = 1) # Stack images horizontal
+            
             # Append to our lists
-            training_data.append(cv2.imread(galName, image_color).astype(np.float32))
+            training_data.append(combinedImage)
+
             result_data.append(result)
 
         # Convert to numpy arrays
@@ -344,11 +359,6 @@ def load_dataset(dataFilename):
     global config
     normalizeOutput = config["default"]["normalize_output"]
 
-    image_color = cv2.IMREAD_GRAYSCALE if config["default"] == "grayscale" else cv2.IMREAD_COLOR
-
-    # Split the path from the filename 
-    directory, filename = os.path.split(dataFilename)    
-
     # Places to store training data and wanted results
     training_data, result_data = read_data(dataFilename)
 
@@ -357,13 +367,14 @@ def load_dataset(dataFilename):
 
     # Normalize test data
     if normalizeOutput:
-        min_output = result_data.min()
-        result_data -= min_output
-        max_output = result_data.max()
-        result_data /= max_output
+        min_output = np.float32(-1)
+        result_data += 1.0
+        max_output = np.float32(1) 
     else:
         min_output = np.float32(0)
         max_output = np.float32(1)
+
+    print(f"Training output min, max: {result_data.min()}, {result_data.max()}")
 
     # Split data in training and test data
     x_train, x_test, y_train, y_test = train_test_split(training_data, result_data, test_size=config["default"]["test_ratio"], random_state=config["default"]["random_state"])
@@ -408,9 +419,9 @@ def get_model(shouldRemove, modelFilename):
 
 def create_model_from_base(base):
     global config
-    image_height = config["default"]["image_height"]
-    image_width = config["default"]["image_width"]
-    image_channels = 1 if config["default"]["mode"] == "grayscale" else 3
+    image_height = get_image_height()
+    image_width = get_image_width()
+    image_channels = get_image_depth()
     num_classes = len(config["default"]["classes"])
 
     print(f"Creating network with input shape: {image_height}, {image_width}, {image_channels} and output shape: {num_classes}")
@@ -493,6 +504,24 @@ def save_model(model, modelName):
 
 def mkdir(directory):
     pathlib.Path(directory).mkdir(parents=True, exist_ok=True)
+
+def get_image_width(): 
+    global config
+    return config["default"]["image_width"] * len(config["default"]["images"])
+
+def get_image_height():
+    global config
+    return config["default"]["image_height"]
+
+def get_image_depth():
+    global config
+
+    if config["default"]["mode"] == "rgb":
+        return 3
+    elif config["default"]["mode"] == "grayscale":
+        return 1
+
+    return -1
 
 if __name__ == "__main__":
     main()
