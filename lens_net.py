@@ -431,6 +431,7 @@ def create_model_from_base(base):
 
     flat = Flatten()(base_model.output)
     classLayer = Dense(512, activation="relu")(flat)
+    classLayer = Dense(512, activation="relu")(classLayer)
     output = Dense(num_classes, activation="linear")(classLayer)
 
     model = Model(inputs = base_model.input, outputs = output)
