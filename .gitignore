@@ -1,3 +1,4 @@
 data/
 models/
-config.json
+default_config.json
+.venv
