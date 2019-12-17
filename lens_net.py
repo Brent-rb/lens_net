@@ -34,6 +34,7 @@ def main():
 
     parse_arguments()
     parse_config()
+    overwrite_config()
 
     # Extract arguments
     shouldTrain = args["train"]
@@ -54,7 +55,7 @@ def main():
         exit()    
 
     # Actual main function
-    run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, inputFilename, modelFilename)
+    # run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, inputFilename, modelFilename)
 
 def run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, inputFilename, modelFilename):
     """Creates or loads a neural network model and then trains, evaluates or predicts with the model depending on the input and flags.
@@ -122,7 +123,7 @@ def train_or_evaluate(model, shouldTrain, shouldEvaluate, inputFilename, modelNa
         config[modelName]["max_output"] = max_output.item()
 
         # Train the neural network
-        model.fit(x_train, y_train, epochs = config["default"]["epochs"], batch_size = config["default"]["batch_size"], shuffle=True)
+        model.fit(x_train, y_train, epochs = config["epochs"], batch_size = config["batch_size"], shuffle=True)
         print("Training complete!")
     
     if shouldEvaluate:
@@ -216,13 +217,21 @@ def parse_arguments():
     global args
 
     # construct the argument parser and parse the arguments
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(prog='PROG', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("-t", "--train", action="store_true", required=False, help="Use this flag to train the network.")
     ap.add_argument("-e", "--evaluate", action="store_true", required=False, help="Use this flag to evaluate the network, if -t is used this will happen after training.")
     ap.add_argument("-p", "--predict", action="store_true", required=False, help="Use this flag to make a prediction.")
-    ap.add_argument("-i", "--input", required=True, help="The input file, if training this file has to be a .json data file, if predicting this can be either an input file or .json data file.")
-    ap.add_argument("-m", "--model", required=True, help="Name of the model file.")
-    ap.add_argument("-r", "--remove", action="store_true", required=False, help="Use this flag to remove the existing model and create a new one.")
+    ap.add_argument("-i", "--input", type=str, required=True, help="The input file, if training this file has to be a .json data file, if predicting this can be either an input file or .json data file.")
+    ap.add_argument("-m", "--model", type=str, required=True, help="Name of the model file.")
+    ap.add_argument("-r", "--remove", action="store_true", default=False, required=False, help="Use this flag to remove the existing model and create a new one.")
+    ap.add_argument("--normalize", action="store_true", required=False, help="Use this flag to normalize the output data.")
+    ap.add_argument("--mode", type=str, required=False, help="Overwrites the default mode that the image will be read in.")
+    ap.add_argument("--rate", type=float, required=False, help="Overwrites the default learning rate.")
+    ap.add_argument("--classes", type=str, required=False, help="Overwrites the default output classes.")
+    ap.add_argument("--images", type=str, required=False, help="Overwrites the default images we will use as input.")
+    ap.add_argument("--batch_size", type=int, required=False, help="Overwrites the default batch size.")
+    ap.add_argument("--epochs", type=int, required=False, help="Overwrites the default epochs.")
+    ap.add_argument("--loss_function", type=str, required=False, help="Overwrites the default loss funciton.")
     args = vars(ap.parse_args())
 
 def parse_config():
@@ -231,7 +240,7 @@ def parse_config():
 
     global config
 
-    if(os.path.isfile("config.json")):
+    if(os.path.isfile("default_config.json")):
         read_config()
     else:
         create_config()
@@ -266,7 +275,7 @@ def create_config():
     global config
 
     config = {}
-    config["default"] = {
+    config = {
         "image_width": 40,
         "image_height": 40,
         "test_ratio": 0.25,
@@ -275,8 +284,7 @@ def create_config():
             "g2"
         ],
         "images": [
-            "galaxy",
-            "psf"
+            "galaxy"
         ],
         "mode": "rgb",
         "random_state": 56741,
@@ -284,12 +292,55 @@ def create_config():
         "loss_function": "mean_absolute_error",
         "metrics": [
             "mean_absolute_error",
-            "mean_absolute_percentage_error"
+            "accuracy"
         ],
-        "batch_size": 32,
+        "batch_size": 64,
         "epochs": 50,
         "normalize_output": False
     }
+
+"""ap.add_argument("--normalize", type=bool, action="store_true", required=False, help="Use this flag to normalize the output data.")
+    ap.add_argument("--mode", type=str, required=False, default="", required=False, help="Overwrites the default mode that the image will be read in.")
+    ap.add_argument("--rate", type=int, required=False, default=0, required=False, help="Overwrites the default learning rate.")
+    ap.add_argument("--classes", type=str, required=False, default="", help="Overwrites the default output classes.")
+    ap.add_argument("--images", type=str, required=False, default="", help="Overwrites the default images we will use as input.")
+    ap.add_argument("--batchsize", type=int, required=False, default=0, help="Overwrites the default batch size.")
+    ap.add_argument("--epochs", type=int, required=False, default=0, help="Overwrites the default epochs.")
+    ap.add_argument("--lossfunction", type=str, required=False, default="", help="Overwrites the default loss funciton.")
+    
+
+Returns:
+    [type] -- [description]
+"""
+def overwrite_config():
+    global config
+    global args
+
+    if(args["normalize"] != None):
+        config["normalize_output"] = args["normalize"]
+
+    if(args["mode"] != None):
+        config["mode"] = args["mode"]
+
+    if(args["rate"] != None):
+        config["learning_rate"] = args["rate"]
+
+    if(args["classes"] != None):
+        config["classes"] = [x.strip() for x in args["classes"].split(',')]
+
+    if(args["images"] != None):
+        config["images"] = [x.strip() for x in args["images"].split(',')]
+
+    if(args["batch_size"] != None):
+        config["bitch_size"] = args["batch_size"]
+
+    if(args["epochs"] != None):
+        config["epochs"] = args["epochs"]
+
+    if(args["loss_function"] != None):
+        config["loss_function"] = args["loss_function"]
+
+    print(config)
 
 def read_data(dataFilename):
     """Uses a data.json file to read in all the images listed, alongside the wanted data.
@@ -302,7 +353,7 @@ def read_data(dataFilename):
     """
 
     global config
-    image_color = cv2.IMREAD_GRAYSCALE if config["default"]["mode"] == "grayscale" else cv2.IMREAD_COLOR
+    image_color = cv2.IMREAD_GRAYSCALE if config["mode"] == "grayscale" else cv2.IMREAD_COLOR
 
     # Split the path from the filename 
     directory, _ = os.path.split(dataFilename)    
@@ -320,11 +371,11 @@ def read_data(dataFilename):
         for entry in jsonObject:
             result = []
             # Get the wanted results
-            for result_class in config["default"]["classes"]:
+            for result_class in config["classes"]:
                 result.append(entry[result_class])
 
             first = True
-            for imageKey in config["default"]["images"]:
+            for imageKey in config["images"]:
                 # Galaxy image filename
                 imageName = os.path.join(directory, entry[imageKey])
                 image = cv2.imread(imageName, image_color).astype(np.float32)
@@ -357,7 +408,7 @@ def load_dataset(dataFilename):
     """
 
     global config
-    normalizeOutput = config["default"]["normalize_output"]
+    normalizeOutput = config["normalize_output"]
 
     # Places to store training data and wanted results
     training_data, result_data = read_data(dataFilename)
@@ -377,7 +428,7 @@ def load_dataset(dataFilename):
     print(f"Training output min, max: {result_data.min()}, {result_data.max()}")
 
     # Split data in training and test data
-    x_train, x_test, y_train, y_test = train_test_split(training_data, result_data, test_size=config["default"]["test_ratio"], random_state=config["default"]["random_state"])
+    x_train, x_test, y_train, y_test = train_test_split(training_data, result_data, test_size=config["test_ratio"], random_state=config["random_state"])
 
     return x_train, x_test, y_train, y_test, min_output, max_output
 
@@ -412,8 +463,8 @@ def get_model(shouldRemove, modelFilename):
         model = create_model_vgg()
 
     # sgd = SGD(lr=lrate, momentum=0.9, decay=decay, nesterov=False)
-    adam = Adam(config["default"]["learning_rate"])
-    model.compile(optimizer= adam, loss=config["default"]["loss_function"], metrics=config["default"]["metrics"])
+    adam = Adam(config["learning_rate"])
+    model.compile(optimizer= adam, loss=config["loss_function"], metrics=config["metrics"])
 
     return model 
 
@@ -422,7 +473,7 @@ def create_model_from_base(base):
     image_height = get_image_height()
     image_width = get_image_width()
     image_channels = get_image_depth()
-    num_classes = len(config["default"]["classes"])
+    num_classes = len(config["classes"])
 
     print(f"Creating network with input shape: {image_height}, {image_width}, {image_channels} and output shape: {num_classes}")
     
@@ -508,18 +559,18 @@ def mkdir(directory):
 
 def get_image_width(): 
     global config
-    return config["default"]["image_width"] * len(config["default"]["images"])
+    return config["image_width"] * len(config["images"])
 
 def get_image_height():
     global config
-    return config["default"]["image_height"]
+    return config["image_height"]
 
 def get_image_depth():
     global config
 
-    if config["default"]["mode"] == "rgb":
+    if config["mode"] == "rgb":
         return 3
-    elif config["default"]["mode"] == "grayscale":
+    elif config["mode"] == "grayscale":
         return 1
 
     return -1
