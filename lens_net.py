@@ -33,9 +33,7 @@ def main():
     global config
 
     parse_arguments()
-    parse_config()
-    overwrite_config()
-
+    
     # Extract arguments
     shouldTrain = args["train"]
     shouldEvaluate = args["evaluate"]
@@ -44,6 +42,11 @@ def main():
     inputFilename = args["input"]
     modelFilename = args["model"]
     _, modelName = os.path.split(modelFilename)
+
+    parse_config(modelFilename)
+    overwrite_config()
+
+    print(config)
 
     # Safety check
     if (shouldTrain or shouldEvaluate) and shouldPredict:
@@ -55,7 +58,7 @@ def main():
         exit()    
 
     # Actual main function
-    # run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, inputFilename, modelFilename)
+    run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, inputFilename, modelFilename)
 
 def run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, inputFilename, modelFilename):
     """Creates or loads a neural network model and then trains, evaluates or predicts with the model depending on the input and flags.
@@ -84,13 +87,12 @@ def run_lens_net(shouldTrain, shouldEvaluate, shouldPredict, shouldRemove, input
         elif shouldPredict:
             predict(model, inputFilename, modelName)
 
-        save_model(model, modelFilename)
-        save_config()
-
     # We might interrupt learning, even on interrupt save model and config
     except KeyboardInterrupt:
-        save_model(model, modelFilename)
-        save_config()
+        pass
+
+    save_model(model, modelFilename)
+    save_config(modelFilename)
 
 def train_or_evaluate(model, shouldTrain, shouldEvaluate, inputFilename, modelName):
     """Trains or evaluates the given model with data from inputFilename.
@@ -234,36 +236,38 @@ def parse_arguments():
     ap.add_argument("--loss_function", type=str, required=False, help="Overwrites the default loss funciton.")
     args = vars(ap.parse_args())
 
-def parse_config():
+def parse_config(modelFilename):
     """Loads a config file if it exists else it creates a config object.
     """
 
     global config
 
-    if(os.path.isfile("default_config.json")):
-        read_config()
+    if(os.path.isfile(os.path.join(modelFilename, "config.json"))):
+        read_config(os.path.join(modelFilename, "config.json"))
+    elif(os.path.isfile("default_config.json")):
+        read_config("default_config.json")
     else:
         create_config()
 
-def read_config():
+def read_config(path):
     """Reads a config file from disk. If this fails a config object will be created.
     """
 
     global config
 
     try:
-        with open("config.json", "r") as configFile:
+        with open(path, "r") as configFile:
             config = json.loads(configFile.read())
     except:
         create_config()
 
-def save_config():
+def save_config(path):
     """Saves the config object to disk.
     """
 
     global config
 
-    with open("config.json", "w") as configFile:
+    with open(os.path.join(path, "config.json"), "w") as configFile:
         configFile.write(json.dumps(config, indent=4, sort_keys=True))
 
     print("Config saved.")
@@ -298,20 +302,6 @@ def create_config():
         "epochs": 50,
         "normalize_output": False
     }
-
-"""ap.add_argument("--normalize", type=bool, action="store_true", required=False, help="Use this flag to normalize the output data.")
-    ap.add_argument("--mode", type=str, required=False, default="", required=False, help="Overwrites the default mode that the image will be read in.")
-    ap.add_argument("--rate", type=int, required=False, default=0, required=False, help="Overwrites the default learning rate.")
-    ap.add_argument("--classes", type=str, required=False, default="", help="Overwrites the default output classes.")
-    ap.add_argument("--images", type=str, required=False, default="", help="Overwrites the default images we will use as input.")
-    ap.add_argument("--batchsize", type=int, required=False, default=0, help="Overwrites the default batch size.")
-    ap.add_argument("--epochs", type=int, required=False, default=0, help="Overwrites the default epochs.")
-    ap.add_argument("--lossfunction", type=str, required=False, default="", help="Overwrites the default loss funciton.")
-    
-
-Returns:
-    [type] -- [description]
-"""
 def overwrite_config():
     global config
     global args
@@ -339,8 +329,6 @@ def overwrite_config():
 
     if(args["loss_function"] != None):
         config["loss_function"] = args["loss_function"]
-
-    print(config)
 
 def read_data(dataFilename):
     """Uses a data.json file to read in all the images listed, alongside the wanted data.
@@ -445,8 +433,8 @@ def get_model(shouldRemove, modelFilename):
 
     # The .json file stores the neural network
     # The h5 file stores the network weights
-    jsonName = f"{modelFilename}.json"
-    h5Name = f"{modelFilename}.h5"
+    jsonName = os.path.join(modelFilename, "model.json")
+    h5Name = os.path.join(modelFilename, "weights.h5")
 
     # Check if the model exists on disk
     if os.path.isfile(jsonName):
@@ -470,6 +458,9 @@ def get_model(shouldRemove, modelFilename):
 
 def create_model_from_base(base):
     global config
+
+    print("Creating model from base...")
+
     image_height = get_image_height()
     image_width = get_image_width()
     image_channels = get_image_depth()
@@ -542,16 +533,17 @@ def read_model(jsonName, h5Name):
     return model
 
 def save_model(model, modelName):
-    directory, name = os.path.split(modelName)
-    if not os.path.isdir(directory):
-        mkdir(directory)
+    if not os.path.isdir(modelName):
+        mkdir(modelName)
 
     # serialize model to JSON
     model_json = model.to_json()
-    with open(f"{modelName}.json", "w") as json_file:
+    model_structure = os.path.join(modelName, "model.json")
+    model_weights = os.path.join(modelName, "weights.h5")
+    with open(model_structure, "w") as json_file:
         json_file.write(model_json)
     # serialize weights to HDF5
-    model.save_weights(f"{modelName}.h5")
+    model.save_weights(model_weights)
     print("Model saved to disk.")
 
 def mkdir(directory):
